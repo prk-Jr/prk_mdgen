@@ -7,68 +7,142 @@ pub struct ParsedFile {
     pub content: String,
 }
 
-/// Parses the given markdown content and returns a vector of ParsedFile (only for .rs, .toml, .json files).
+/// Parses the given markdown content and returns a vector of ParsedFile (only for .rs, .toml, or .json files).
 ///
-/// Supported patterns:
+/// It supports several patterns:
 ///
-/// 1. `<code path="file_path"> ... </code>`
-/// 2. Code fence blocks with preceding marker (e.g. `### file_path.rs`).
-/// 3. Delimiter-based marker: lines like `======== file_path.rs ========` before a code block.
-/// 4. Raw code block with a header comment (e.g. `// file: src/main.rs`).
+/// 1. XML-like code block:
+///    `<code path="file_path"> ... </code>`
+///
+/// 2. Hash marker pattern:
+///    A header line like `### src/main.rs` followed by a code fence block.
+///    The code fence must start with a line containing only "```" (optionally with "rust"),
+///    then the code lines, and it ends when a line containing only "```" is found.
+///    If no closing fence is found, all remaining lines are captured.
+///
+/// 3. Delimiter marker pattern:
+///    A three‑line header consisting of:
+///      - Line 1: a line of equals signs (only "=" characters),
+///      - Line 2: the file name (e.g. `src/lib.rs`),
+///      - Line 3: another line of equals signs,
+///    followed by a code fence block (same as above).
+///
+/// 4. Raw code block pattern:
+///    A header comment like `// file: src/utils.rs` on its own line,
+///    followed by a code fence block (same as above).
+///
+/// Returns a vector of ParsedFile with the file path and captured code.
 pub fn parse_content(content: &str) -> Vec<ParsedFile> {
     let mut results = Vec::new();
 
     // Pattern 1: <code path="..."> ... </code>
+    // The pattern now uses the (?is) flags to be case-insensitive and allow '.' to match newlines.
     lazy_static! {
         static ref CODE_TAG_REGEX: Regex = Regex::new(
-            r#"<code\s+path\s*=\s*"([^"]+\.(?:rs|toml|json))">\s*(?s:(.*?))\s*</code>"#
+            r#"(?is)<code\s+path\s*=\s*"([^"\r\n]+?\.(?:rs|toml|json))">\s*(.*?)\s*</code>"#
         ).unwrap();
     }
+    
+    
     for cap in CODE_TAG_REGEX.captures_iter(content) {
         let path = cap[1].trim().to_string();
         let code = cap[2].trim().to_string();
         results.push(ParsedFile { path, content: code });
     }
 
-    // Pattern 2: Lines starting with ### (or 1-6 hashes) followed by file path
-    // on its own line, then a ```rust code fence on its own line,
-    // then the code block, and ending with a closing ``` line.
+    // Split the input into lines.
+    let lines: Vec<&str> = content.lines().collect();
+    let mut idx = 0;
+
+    // Compile header regexes for hash marker and raw header.
     lazy_static! {
-        static ref HASH_MARKER_REGEX: Regex = Regex::new(
-            r"(?m)^\s*#{1,6}\s+([^\s]+?\.(?:rs|toml|json))\s*$\r?\n\s*```(?:rust)?\s*$\r?\n(?s:(.*?))\s*```"
-        ).unwrap();
-    }
-    for cap in HASH_MARKER_REGEX.captures_iter(content) {
-        let path = cap[1].trim().to_string();
-        let code = cap[2].trim().to_string();
-        results.push(ParsedFile { path, content: code });
+        // Hash marker: starts with 1-6 '#' followed by whitespace and file name.
+        static ref HASH_HEADER_REGEX: Regex = Regex::new(r"^\s*#{1,6}\s+([^\s]+\.(?:rs|toml|json))\s*$").unwrap();
+        // Raw code block header: // file: path
+        static ref RAW_HEADER_REGEX: Regex = Regex::new(r"^\s*//\s*file:\s*([^\s]+\.(?:rs|toml|json))\s*$").unwrap();
+        // Code fence: a line that starts with ``` (possibly with "rust") and nothing else.
+        static ref CODE_FENCE_REGEX: Regex = Regex::new(r"^\s*```(?:rust)?\s*$").unwrap();
     }
 
-    // Pattern 3: Delimiter-based marker (======== file_path.rs ========) followed by a code fence.
-    lazy_static! {
-        static ref DELIMITER_REGEX: Regex = Regex::new(
-            r"(?m)^\s*=+\s*([^\s]+?\.(?:rs|toml|json))\s*=+\s*$\r?\n\s*```(?:rust)?\s*$\r?\n(?s:(.*?))\s*```"
-        ).unwrap();
-    }
-    for cap in DELIMITER_REGEX.captures_iter(content) {
-        let path = cap[1].trim().to_string();
-        let code = cap[2].trim().to_string();
-        results.push(ParsedFile { path, content: code });
+    // Helper function to extract a code block given an index at the opening fence.
+    // Returns (code_string, next index to process)
+    fn extract_code_block(lines: &[&str], mut idx: usize) -> (String, usize) {
+        let mut code_lines = Vec::new();
+        while idx < lines.len() {
+            if CODE_FENCE_REGEX.is_match(lines[idx]) {
+                idx += 1; // Skip the closing fence.
+                break;
+            } else {
+                code_lines.push(lines[idx]);
+                idx += 1;
+            }
+        }
+        (code_lines.join("\n"), idx)
     }
 
-    // Pattern 4: A raw code block directly annotated with ```rust,
-    // preceded by a header comment (e.g. // file: src/main.rs) on its own line.
-    // In this case, if there's no closing fence, we capture until end-of-input.
-    lazy_static! {
-        static ref RAW_CODE_BLOCK_REGEX: Regex = Regex::new(
-            r"(?m)^\s*//\s*file:\s*([^\s]+?\.(?:rs|toml|json))\s*$\r?\n\s*```(?:rust)?\s*$\r?\n(?s:(.*))"
-        ).unwrap();
-    }
-    for cap in RAW_CODE_BLOCK_REGEX.captures_iter(content) {
-        let path = cap[1].trim().to_string();
-        // Capture until end-of-input when no closing fence is provided.
-        let code = cap[2].trim().to_string();
-        results.push(ParsedFile { path, content: code });
+    // Main loop: scan lines for headers then process the corresponding code block.
+    while idx < lines.len() {
+        let line = lines[idx];
+
+        // --- Hash marker processing ---
+        if let Some(cap) = HASH_HEADER_REGEX.captures(line) {
+            let file_path = cap[1].trim().to_string();
+            idx += 1;
+            // Skip blank lines to find the code fence.
+            while idx < lines.len() && lines[idx].trim().is_empty() {
+                idx += 1;
+            }
+            if idx < lines.len() && CODE_FENCE_REGEX.is_match(lines[idx]) {
+                idx += 1; // Skip opening fence.
+                let (code, new_idx) = extract_code_block(&lines, idx);
+                idx = new_idx;
+                results.push(ParsedFile { path: file_path, content: code.trim().to_string() });
+                continue;
+            }
+        }
+        // --- Delimiter marker processing ---
+        else if line.trim().chars().all(|c| c == '=') && !line.trim().is_empty() {
+            // Check for three-line delimiter header.
+            if idx + 2 < lines.len() {
+                let candidate = lines[idx + 1].trim();
+                // Check if candidate looks like a file name with allowed extension.
+                if candidate.ends_with(".rs") || candidate.ends_with(".toml") || candidate.ends_with(".json") {
+                    let delim_line = lines[idx + 2].trim();
+                    if delim_line.chars().all(|c| c == '=') && !delim_line.is_empty() {
+                        // We have matched the three-line header.
+                        let file_path = candidate.to_string();
+                        idx += 3; // Skip the three header lines.
+                        // Skip blank lines until code fence.
+                        while idx < lines.len() && lines[idx].trim().is_empty() {
+                            idx += 1;
+                        }
+                        if idx < lines.len() && CODE_FENCE_REGEX.is_match(lines[idx]) {
+                            idx += 1; // Skip opening code fence.
+                            let (code, new_idx) = extract_code_block(&lines, idx);
+                            idx = new_idx;
+                            results.push(ParsedFile { path: file_path, content: code.trim().to_string() });
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+        // --- Raw code block processing ---
+        else if let Some(cap) = RAW_HEADER_REGEX.captures(line) {
+            let file_path = cap[1].trim().to_string();
+            idx += 1;
+            while idx < lines.len() && lines[idx].trim().is_empty() {
+                idx += 1;
+            }
+            if idx < lines.len() && CODE_FENCE_REGEX.is_match(lines[idx]) {
+                idx += 1;
+                let (code, new_idx) = extract_code_block(&lines, idx);
+                idx = new_idx;
+                results.push(ParsedFile { path: file_path, content: code.trim().to_string() });
+                continue;
+            }
+        }
+        idx += 1;
     }
 
     results
@@ -87,7 +161,7 @@ mod tests {
             </code>
         "#;
         let parsed = parse_content(md);
-        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed.len(), 1, "Expected one parsed file for code tag pattern");
         assert_eq!(parsed[0].path, "Cargo.toml");
         assert!(parsed[0].content.contains("[package]"));
     }
@@ -132,6 +206,20 @@ mod tests {
         let parsed = parse_content(md);
         assert_eq!(parsed.len(), 1, "Expected one parsed file for raw code block pattern");
         assert_eq!(parsed[0].path, "src/utils.rs");
-        assert!(parsed[0].content.contains("util"));
+        assert!(parsed[0].content.contains("pub fn util() {}"));
+    }
+
+    #[test]
+    fn test_hash_marker_no_closing_fence() {
+        let md = r#"
+            ### src/missing.rs
+            ```rust
+            // Some code without a closing fence
+            pub fn foo() {}
+        "#;
+        let parsed = parse_content(md);
+        assert_eq!(parsed.len(), 1, "Expected one parsed file even when closing fence is missing");
+        assert_eq!(parsed[0].path, "src/missing.rs");
+        assert!(parsed[0].content.contains("pub fn foo() {}"));
     }
 }

@@ -73,11 +73,27 @@ fn parse_code_tag(content: &str) -> Vec<ParsedFile> {
     let mut results = Vec::new();
     for cap in CODE_TAG_REGEX.captures_iter(content) {
         let path = cap[1].trim().to_string();
-        let code = cap[2].trim().to_string();
+        let mut code = cap[2].trim().to_string();
+
+        // If the captured code starts with a code fence, remove it.
+        if code.starts_with("```") {
+            // Remove the first line (the opening fence with optional language).
+            if let Some(pos) = code.find('\n') {
+                code = code[pos..].trim_start().to_string();
+            }
+            // If the code ends with a closing fence, remove it.
+            if code.ends_with("```") {
+                if let Some(pos) = code.rfind("```") {
+                    code = code[..pos].trim_end().to_string();
+                }
+            }
+        }
+
         results.push(ParsedFile { path, content: code });
     }
     results
 }
+
 
 /// Sub-parser 2: Hash marker pattern.
 /// Example:

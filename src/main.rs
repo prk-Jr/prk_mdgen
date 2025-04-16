@@ -2,9 +2,12 @@ mod parser;
 mod scanner;
 mod file_gen;
 mod extra;
+mod execute;
 
 use std::env;
+use std::path::Path;
 use std::process;
+use execute::execute_project_if_needed;
 use extra::*;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
@@ -20,6 +23,9 @@ struct Cli {
     /// Optional output directory for the generated project.
     #[arg(long, short, default_value = "output")]
     output_dir: String,
+
+    #[arg(short, long)]
+    execute: bool,
 
     /// Optional force MD pattern type (choices: code_tag, hash, delimiter, raw, file_code).
     #[arg(long, short, value_enum)]
@@ -104,6 +110,10 @@ fn main() {
                         eprintln!("Error generating project {}: {}", project_name, err);
                     } else {
                         println!("Project {} generated in {}", project_name, output_dir);
+                        let output = &Path::new(output_dir.as_str());
+                        if let Err(err) = execute_project_if_needed(&output, &output) {
+                            eprintln!("Execution failed for {}: {}", project_name, err);
+                        }
                     }
                 }
             }

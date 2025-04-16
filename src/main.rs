@@ -8,66 +8,106 @@ use std::process;
 use extra::*;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
-fn main() {
-    let args: Vec<String> = env::args().collect();
+use clap::{Parser, ValueEnum};
 
-    // Check for subcommands "sample" and "prompt"
-    if args.len() > 1 {
-        match args[1].as_str() {
-            "sample" => {
+#[derive(Parser)]
+#[command(author, version, about)]
+struct Cli {
+    /// Optional subcommand: sample or prompt.
+    #[arg(value_enum, default_value = "none")]
+    command: Option<CommandChoice>,
+
+    /// Optional output directory for the generated project.
+    #[arg(long, short, default_value = "output")]
+    output_dir: String,
+
+    /// Optional force MD pattern type (choices: code_tag, hash, delimiter, raw, file_code).
+    #[arg(long, short, value_enum)]
+    pattern: Option<MdPatternCli>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum CommandChoice {
+    Sample,
+    Prompt,
+    None,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum MdPatternCli {
+    CodeTag,
+    Hash,
+    Delimiter,
+    Raw,
+    FileCode,
+}
+
+impl From<MdPatternCli> for parser::MdPatternType {
+    fn from(item: MdPatternCli) -> Self {
+        match item {
+            MdPatternCli::CodeTag => parser::MdPatternType::CodeTag,
+            MdPatternCli::Hash => parser::MdPatternType::HashMarker,
+            MdPatternCli::Delimiter => parser::MdPatternType::Delimiter,
+            MdPatternCli::Raw => parser::MdPatternType::Raw,
+            MdPatternCli::FileCode => parser::MdPatternType::FileCode,
+        }
+    }
+}
+
+fn main() {
+    let cli = Cli::parse();
+
+    // Handle sample and prompt subcommands.
+    if let Some(cmd) = cli.command {
+        match cmd {
+            CommandChoice::Sample => {
                 if let Err(e) = generate_sample_md() {
                     eprintln!("Error generating sample.md: {}", e);
                     process::exit(1);
                 }
                 return;
             }
-            "prompt" => {
+            CommandChoice::Prompt => {
                 if let Err(e) = generate_prompt_md() {
                     eprintln!("Error generating prompt.md: {}", e);
                     process::exit(1);
                 }
                 return;
             }
-            _ => {
-                // Fall back to default behavior: generate projects from *.md files.
-                println!("Unknown command. Proceeding with project generation from markdown files.");
-            }
+            CommandChoice::None => {} // Continue.
         }
     }
 
-    // Get current directory
+    // Get current directory.
     let current_dir = env::current_dir().expect("Failed to get current directory");
     println!("Scanning folder: {:?}", current_dir);
 
-    // Scan the directory for markdown files and parse them concurrently using rayon.
+    // Find Markdown files.
     let md_files = scanner::find_md_files(&current_dir);
-
     if md_files.is_empty() {
         eprintln!("No .md files found in the current directory.");
         process::exit(1);
     }
 
-    // Process each markdown file concurrently.
+    // Process each Markdown file concurrently.
     md_files.par_iter().for_each(|file_path| {
         println!("Processing file: {:?}", file_path);
         match scanner::read_file(file_path) {
             Ok(content) => {
-                // Parse out file blocks (only for recognized file extensions)
-                let parsed_files = parser::parse_content(&content);
+                let forced = cli.pattern.map(|pt| pt.into());
+                let parsed_files = parser::parse_content(&content, forced);
                 if parsed_files.is_empty() {
                     println!("No valid file blocks found in {:?}", file_path);
-                } else {
-                    // Derive project name from the markdown file's basename.
-                    if let Some(project_name) = scanner::extract_project_name(file_path) {
-                        file_gen::generate_project(&project_name, parsed_files)
-                            .unwrap_or_else(|err| eprintln!("Error generating project {}: {}", project_name, err));
-                        println!("Project {} generated.", project_name);
+                } else if let Some(project_name) = scanner::extract_project_name(file_path) {
+                    let output_dir = format!("{}/{}", cli.output_dir, project_name);
+                    if let Err(err) = file_gen::generate_project_with_dir(&output_dir, parsed_files, file_path) {
+                        eprintln!("Error generating project {}: {}", project_name, err);
+                    } else {
+                        println!("Project {} generated in {}", project_name, output_dir);
                     }
                 }
             }
-            Err(e) => {
-                eprintln!("Error reading file {:?}: {}", file_path, e);
-            }
+            Err(e) => eprintln!("Error reading file {:?}: {}", file_path, e),
         }
     });
 }

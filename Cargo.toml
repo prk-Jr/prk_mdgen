@@ -6,6 +6,7 @@ description = "Generate and execute Rust projects from annotated Markdown files"
 license = "MIT"
 categories = ["command-line-utilities", "development-tools", "parsing"]
 keywords = ["rust", "markdown", "generator", "cli"]
+repository = "https://github.com/prk-Jr/prk_mdgen"
 
 [dependencies]
 regex = "1.7"

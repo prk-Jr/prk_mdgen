@@ -22,44 +22,40 @@ pub enum MdPatternType {
 /// If `forced` is provided, only that pattern is used; otherwise the parser
 /// automatically selects the pattern with the most extracted file blocks.
 pub fn parse_content(content: &str, forced: Option<MdPatternType>) -> Vec<ParsedFile> {
-    // Trim the content to remove any leading/trailing whitespace.
     let content = content.trim();
 
-    // Run each sub-parser.
     let group1 = parse_code_tag(content);
     let group2 = parse_hash_marker(content);
     let group3 = parse_delimiter_marker(content);
     let group4 = parse_raw_code_block(content);
     let group5 = parse_file_code(content);
-    let group6 = parse_file_fence(content);
+    let group6 = parse_file_fence(content);  // ← new
 
-    // If a pattern type is forced, return that group (or an empty vector if none).
-    if let Some(forced_type) = forced {
-        return match forced_type {
-            MdPatternType::CodeTag => group1,
-            MdPatternType::HashMarker => group2,
+    if let Some(f) = forced {
+        return match f {
+            MdPatternType::CodeTag   => group1,
+            MdPatternType::HashMarker=> group2,
             MdPatternType::Delimiter => group3,
-            MdPatternType::Raw => group4,
-            MdPatternType::FileCode => group5,
+            MdPatternType::Raw       => group4,
+            MdPatternType::FileCode  => group5,
             MdPatternType::FileFence => group6,
         };
     }
 
-    // Merge the results from all sub-parsers.
     let mut all = Vec::new();
     all.extend(group1);
     all.extend(group2);
     all.extend(group3);
     all.extend(group4);
     all.extend(group5);
-    all.extend(group6);
+    all.extend(group6);                        // ← merge it here
 
-    // Optional: deduplicate by file path if the same file is defined in multiple patterns.
-    all.sort_by(|a, b| a.path.cmp(&b.path));
-    all.dedup_by(|a, b| a.path == b.path);
-
+    // dedupe by path
+    all.sort_by(|a,b| a.path.cmp(&b.path));
+    all.dedup_by(|a,b| a.path == b.path);
     all
 }
+
 
 /// Sub-parser 1: XML-like code block pattern.
 /// Example:

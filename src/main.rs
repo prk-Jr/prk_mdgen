@@ -3,39 +3,51 @@ mod scanner;
 mod file_gen;
 mod extra;
 mod execute;
+mod extract;
 
 use std::env;
+use std::fs;
 use std::path::Path;
 use std::process;
+use clap::{Parser, ValueEnum};
 use execute::execute_project_if_needed;
-use extra::*;
+use extract::{ExtractConfig, extract_to_markdown};
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
-use clap::{Parser, ValueEnum};
 
 #[derive(Parser)]
 #[command(author, version, about)]
 struct Cli {
-    /// Optional subcommand: sample or prompt.
+    /// Choose an operation: sample, prompt, extract, or none (default).
     #[arg(value_enum, default_value = "none")]
-    command: Option<CommandChoice>,
+    command: CommandChoice,
 
-    /// Optional output directory for the generated project.
-    #[arg(long, short, default_value = "output")]
+    /// Output directory for generated projects or extracted markdown.
+    #[arg(short, long, default_value = "output")]
     output_dir: String,
 
+    /// Execute generated projects (cargo run for main.rs, cargo test for lib.rs).
     #[arg(short, long)]
     execute: bool,
 
-    /// Optional force MD pattern type (choices: code_tag, hash, delimiter, raw, file_code).
-    #[arg(long, short, value_enum)]
+    /// Force a specific Markdown pattern for parsing (e.g. code-tag, hash, delimiter, raw, file-code, file-fence).
+    #[arg(short, long, value_enum)]
     pattern: Option<MdPatternCli>,
+
+    /// Optional project type hint for extraction (e.g. "rust", "flutter", "node").
+    #[arg(long)]
+    project_type: Option<String>,
+
+    /// Comma‑separated list of file or folder names to skip during extraction.
+    #[arg(long, value_delimiter = ',')]
+    skip: Vec<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum CommandChoice {
     Sample,
     Prompt,
+    Extract,
     None,
 }
 
@@ -65,39 +77,58 @@ impl From<MdPatternCli> for parser::MdPatternType {
 fn main() {
     let cli = Cli::parse();
 
-    // Handle sample and prompt subcommands.
-    if let Some(cmd) = cli.command {
-        match cmd {
-            CommandChoice::Sample => {
-                if let Err(e) = generate_sample_md() {
-                    eprintln!("Error generating sample.md: {}", e);
-                    process::exit(1);
-                }
-                return;
+    // Handle sample, prompt, and extract subcommands.
+    match cli.command {
+        CommandChoice::Sample => {
+            if let Err(e) = extra::generate_sample_md() {
+                eprintln!("Error generating sample.md: {}", e);
+                process::exit(1);
             }
-            CommandChoice::Prompt => {
-                if let Err(e) = generate_prompt_md() {
-                    eprintln!("Error generating prompt.md: {}", e);
-                    process::exit(1);
-                }
-                return;
-            }
-            CommandChoice::None => {} // Continue.
+            return;
         }
+        CommandChoice::Prompt => {
+            if let Err(e) = extra::generate_prompt_md() {
+                eprintln!("Error generating prompt.md: {}", e);
+                process::exit(1);
+            }
+            return;
+        }
+        CommandChoice::Extract => {
+            let current_dir = env::current_dir().expect("Failed to get current directory");
+            let ignore_file = current_dir.join(".gitignore");
+            let config = ExtractConfig {
+                root: current_dir.clone(),
+                ignore_file: if ignore_file.exists() { Some(ignore_file) } else { None },
+                extra_ignores: cli.skip.clone(),
+                project_type: cli.project_type.clone(),
+            };
+            match extract_to_markdown(config) {
+                Ok(md) => {
+                    let out_md = Path::new(&cli.output_dir).join("codebase.md");
+                    fs::create_dir_all(&cli.output_dir).unwrap();
+                    fs::write(&out_md, md).expect("Failed to write codebase.md");
+                    println!("Extracted markdown to {:?}", out_md);
+                }
+                Err(e) => {
+                    eprintln!("Extraction failed: {}", e);
+                    process::exit(1);
+                }
+            }
+            return;
+        }
+        CommandChoice::None => {}
     }
 
-    // Get current directory.
+    // Default: generate Rust projects from Markdown files.
     let current_dir = env::current_dir().expect("Failed to get current directory");
     println!("Scanning folder: {:?}", current_dir);
 
-    // Find Markdown files.
     let md_files = scanner::find_md_files(&current_dir);
     if md_files.is_empty() {
         eprintln!("No .md files found in the current directory.");
         process::exit(1);
     }
 
-    // Process each Markdown file concurrently.
     md_files.par_iter().for_each(|file_path| {
         println!("Processing file: {:?}", file_path);
         match scanner::read_file(file_path) {
@@ -112,9 +143,11 @@ fn main() {
                         eprintln!("Error generating project {}: {}", project_name, err);
                     } else {
                         println!("Project {} generated in {}", project_name, output_dir);
-                        let output = &Path::new(output_dir.as_str());
-                        if let Err(err) = execute_project_if_needed(&output, &output) {
-                            eprintln!("Execution failed for {}: {}", project_name, err);
+                        if cli.execute {
+                            let project_path = Path::new(&output_dir);
+                            if let Err(err) = execute_project_if_needed(project_path, project_path) {
+                                eprintln!("Execution failed for {}: {}", project_name, err);
+                            }
                         }
                     }
                 }

@@ -1,17 +1,35 @@
+Here’s your updated `README.md` with **Extract** functionality fully documented and aligned with your CLI:
+
+---
+
+```md
 # 🦀 Markdown to Rust Project Generator
 
 This tool parses specially formatted Markdown files to generate fully structured Rust projects — and even executes them (via `cargo run` or `cargo test` depending on the code)!
+
+It can also extract a real Rust project from disk into a Markdown spec file using the `extract` command!
 
 ---
 
 ## 📦 What It Does
 
-This CLI tool scans all Markdown (`.md`) files in the current directory, extracts embedded Rust code annotated with file paths, and:
+This CLI tool supports two main workflows:
 
-- **Generates complete Rust projects** (files, folders, `Cargo.toml`, etc.)
-- **Builds and runs projects** with `main.rs` using `cargo run`
-- **Runs tests** on projects with `lib.rs` using `cargo test`
-- Saves execution output in `run_output.txt` or `test_output.txt` respectively
+### 🛠 1. **Project Generation**
+
+- Scans all Markdown (`.md`) files in the current directory
+- Extracts embedded Rust code annotated with file paths
+- **Generates full Rust projects** (files, folders, `Cargo.toml`, etc.)
+- **Builds and runs** `main.rs` projects using `cargo run`
+- **Tests** `lib.rs` projects using `cargo test`
+- Saves execution output to `run_output.txt` or `test_output.txt`
+
+### 📤 2. **Project Extraction**
+
+- Takes an existing Rust codebase and **generates a single Markdown file**
+- All `.rs` files are converted to annotated code blocks with file paths
+- Supports `.gitignore` and additional `--skip` rules
+- Great for documentation, LLM prompts, or reproducible specs
 
 ---
 
@@ -57,15 +75,16 @@ You can annotate code blocks in your Markdown using several supported patterns:
        x * x
    }
    ```
-5. **File befor code**
-```md
+
+5. **File Fence**
+   ```md
    ### <file> src/main.rs </file>
-```rust
-use std::sync::Arc;
-use std::error::Error;
-use std::future::Future;
+   ```rust
+   use std::sync::Arc;
+   use std::error::Error;
+   use std::future::Future;
    ```
-```
+   ```
 
 ---
 
@@ -74,10 +93,8 @@ use std::future::Future;
 ### 🛠 Prerequisites
 
 - Rust & Cargo installed (`https://rustup.rs`)
-- `rayon` and `clap` as dependencies
 
 ### 📥 Installation
-
 
 ```bash
 cargo install prk_mdgen
@@ -87,45 +104,62 @@ cargo install prk_mdgen
 
 ## 🧪 Usage
 
-Run the parser in the directory containing Markdown files:
+### 🔁 Markdown → Rust (Default Mode)
 
 ```bash
 prk_mdgen
 ```
 
-You can customize it using the CLI options:
+Generate Rust projects from all `.md` files in the current directory.
+
+### 📤 Extract Rust → Markdown
+
+```bash
+prk_mdgen extract -o ./docs --skip target,.git,tests
+```
+
+This will scan the current Rust project and generate `docs/codebase.md` with annotated code blocks for each file.
+
+---
+
+### 🔧 Additional CLI Options
 
 ```bash
 USAGE:
     prk_mdgen [OPTIONS]
 
 OPTIONS:
-    -o, --output-dir <DIR>     Output directory for generated projects [default: output]
-    -p, --pattern <PATTERN>    Force a specific pattern (code-tag, hash, delimiter, raw, file-code)
-    -c, --command <COMMAND>    Generate a sample or prompt markdown file (sample, prompt)
+    -o, --output-dir <DIR>     Output directory [default: output]
+    -p, --pattern <PATTERN>    Force a specific pattern (code-tag, hash, delimiter, raw, file-code, file-fence)
+    -c, --command <COMMAND>    sample | prompt | extract
+    -e, --execute              Run `cargo run` or `cargo test` on generated projects
+        --skip <ITEMS>         Comma-separated list of files or folders to skip
+        --project-type <TYPE>  (Optional) Language hint during extraction (e.g. rust, node, flutter)
 ```
 
-### 🔍 Example
+---
+
+### 🔍 Example Workflows
 
 ```bash
-# Generate a prompt template for an LLM
+# Generate a prompt template
 prk_mdgen prompt
 
-# Process all .md files and write projects to ./output
-prk_mdgen -o ./output
+# Generate sample Markdown to test parsing
+prk_mdgen sample
 
-# Force pattern detection to use XML code tags only
-prk_mdgen --pattern code-tag
+# Extract an existing Rust project to Markdown
+prk_mdgen extract -o ./docs --skip target,.git
 
-# Process all .md files and write projects to ./output and then run `cargo run` and `cargo test`
-prk_mdgen -0 ./output -e
+# Generate projects from Markdown and run them
+prk_mdgen -o ./output -e
 ```
 
 ---
 
 ## 📂 Output Structure
 
-For each Markdown file found:
+When generating a project from Markdown:
 
 ```text
 output/
@@ -134,6 +168,13 @@ output/
     ├── src/
     │   └── main.rs
     └── run_output.txt   # if main.rs exists
+```
+
+When extracting a project to Markdown:
+
+```text
+output/
+└── codebase.md   # contains annotated code blocks for each source file
 ```
 
 ---
@@ -147,25 +188,23 @@ output/
 
 ## 📚 Development
 
-To test parsing or project generation without writing a full Markdown file, you can generate starter files:
+To test parsing or generation logic:
 
 ```bash
 prk_mdgen sample
 ```
 
-### 🔧 Add New Parsing Styles?
-
-Look inside `parser.rs` and update `MdPatternType` logic to support new formats.
+To add new parsing formats, see `parser.rs` and extend the `MdPatternType` enum and detection logic.
 
 ---
 
 ## 🧑‍💻 Contributing
 
-Pull requests welcome! Please include:
+Pull requests welcome! Please:
 
-- A relevant test Markdown file
-- Use of at least one of the supported patterns
-- Clean `cargo fmt`-ed code
+- Add a Markdown test case
+- Use one or more supported code block patterns
+- Run `cargo fmt` before committing
 
 ---
 
@@ -181,3 +220,4 @@ This tool is built with love in Rust using:
 
 - [`clap`](https://docs.rs/clap/) for CLI parsing
 - [`rayon`](https://docs.rs/rayon/) for parallel file processing
+```

@@ -2,6 +2,10 @@
 name = "prk_mdgen"
 version = "0.1.0"
 edition = "2024"
+description = "Generate and execute Rust projects from annotated Markdown files"
+license = "MIT"
+categories = ["command-line-utilities", "development-tools", "parsing"]
+keywords = ["rust", "markdown", "generator", "cli"]
 
 [dependencies]
 regex = "1.7"

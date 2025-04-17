@@ -293,7 +293,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "prk_md_parser"
+name = "prk_mdgen"
 version = "0.1.0"
 dependencies = [
  "assert_cmd",

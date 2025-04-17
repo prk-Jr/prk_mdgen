@@ -57,6 +57,15 @@ You can annotate code blocks in your Markdown using several supported patterns:
        x * x
    }
    ```
+5. **File befor code**
+```md
+   ### <file> src/main.rs </file>
+```rust
+use std::sync::Arc;
+use std::error::Error;
+use std::future::Future;
+   ```
+```
 
 ---
 

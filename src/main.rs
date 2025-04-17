@@ -46,6 +46,7 @@ enum MdPatternCli {
     Delimiter,
     Raw,
     FileCode,
+    FileFence,
 }
 
 impl From<MdPatternCli> for parser::MdPatternType {
@@ -56,6 +57,7 @@ impl From<MdPatternCli> for parser::MdPatternType {
             MdPatternCli::Delimiter => parser::MdPatternType::Delimiter,
             MdPatternCli::Raw => parser::MdPatternType::Raw,
             MdPatternCli::FileCode => parser::MdPatternType::FileCode,
+            MdPatternCli::FileFence => parser::MdPatternType::FileFence,
         }
     }
 }

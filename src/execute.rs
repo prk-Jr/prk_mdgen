@@ -31,7 +31,6 @@ pub fn execute_project_if_needed(project_dir: &Path, output_dir: &Path) -> std::
         fs::write(&output_file, combined_output)?;
     }
 
-    if lib_rs.exists() {
         let output_file = output_dir.join("test_output.txt");
         println!("Executing `cargo test` for {:?}", project_dir);
 
@@ -47,7 +46,6 @@ pub fn execute_project_if_needed(project_dir: &Path, output_dir: &Path) -> std::
         );
 
         fs::write(&output_file, combined_output)?;
-    }
 
     Ok(())
 }

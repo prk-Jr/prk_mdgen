@@ -1,8 +1,3 @@
-Here’s your updated `README.md` with **Extract** functionality fully documented and aligned with your CLI:
-
----
-
-```md
 # 🦀 Markdown to Rust Project Generator
 
 This tool parses specially formatted Markdown files to generate fully structured Rust projects — and even executes them (via `cargo run` or `cargo test` depending on the code)!
@@ -220,4 +215,3 @@ This tool is built with love in Rust using:
 
 - [`clap`](https://docs.rs/clap/) for CLI parsing
 - [`rayon`](https://docs.rs/rayon/) for parallel file processing
-```

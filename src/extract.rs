@@ -11,6 +11,36 @@ pub struct ExtractConfig {
     pub pattern: Option<MdPatternCli>,
 }
 
+/// Simple project tree generator with no params — uses current dir
+pub fn generate_tree_markdown() -> Result<String> {
+    let root = std::env::current_dir().context("Failed to get current directory")?;
+
+    let mut builder = WalkBuilder::new(&root);
+    builder.git_ignore(true).git_exclude(true).hidden(true);
+    let walker = builder.build();
+
+    let mut files = Vec::new();
+    for entry in walker {
+        let entry = entry?;
+        if !entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+            continue;
+        }
+        files.push(entry.into_path());
+    }
+
+    files.sort();
+
+    let tree = build_tree(&files, &root);
+
+    let mut md = String::new();
+    md.push_str("# Project structure\n\n");
+    md.push_str("```\n");
+    md.push_str(&tree);
+    md.push_str("```\n");
+
+    Ok(md)
+}
+
 /// Walks the directory, applies ignores & skips, builds a tree and dumps every file into Markdown.
 pub fn extract_to_markdown(config: ExtractConfig) -> Result<String> {
     // 1) Build the walker with .gitignore etc.

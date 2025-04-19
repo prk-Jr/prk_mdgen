@@ -1,19 +1,19 @@
+mod execute;
+mod extra;
+mod extract;
+mod file_gen;
 mod parser;
 mod scanner;
-mod file_gen;
-mod extra;
-mod execute;
-mod extract;
 
-use std::env;
-use std::fs;
-use std::path::Path;
-use std::process;
 use clap::{Parser, ValueEnum};
 use execute::execute_project_if_needed;
 use extract::{ExtractConfig, extract_to_markdown};
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
+use std::env;
+use std::fs;
+use std::path::Path;
+use std::process;
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -48,6 +48,7 @@ enum CommandChoice {
     Sample,
     Prompt,
     Extract,
+    Tree,
     None,
 }
 
@@ -98,14 +99,18 @@ fn main() {
             let ignore_file = current_dir.join(".gitignore");
             let config = ExtractConfig {
                 root: current_dir.clone(),
-                ignore_file: if ignore_file.exists() { Some(ignore_file) } else { None },
+                ignore_file: if ignore_file.exists() {
+                    Some(ignore_file)
+                } else {
+                    None
+                },
                 extra_ignores: cli.skip.clone(),
                 project_type: cli.project_type.clone(),
                 pattern: cli.pattern.clone(),
             };
             match extract_to_markdown(config) {
                 Ok(md) => {
-                    let out_md = Path::new(&cli.output_dir).join("codebase.md");
+                    let out_md = Path::new(&cli.output_dir);
                     fs::create_dir_all(&cli.output_dir).unwrap();
                     fs::write(&out_md, md).expect("Failed to write codebase.md");
                     println!("Extracted markdown to {:?}", out_md);
@@ -117,6 +122,19 @@ fn main() {
             }
             return;
         }
+        CommandChoice::Tree => match extract::generate_tree_markdown() {
+            Ok(md) => {
+                let out_md = Path::new(&cli.output_dir).join("tree.md");
+                fs::create_dir_all(&cli.output_dir).unwrap();
+                fs::write(&out_md, md.clone()).expect("Failed to write tree.md");
+                println!("Generated project tree in {:?}", out_md);
+                return;
+            }
+            Err(e) => {
+                eprintln!("Tree generation failed: {}", e);
+                process::exit(1);
+            }
+        },
         CommandChoice::None => {}
     }
 
@@ -140,13 +158,16 @@ fn main() {
                     println!("No valid file blocks found in {:?}", file_path);
                 } else if let Some(project_name) = scanner::extract_project_name(file_path) {
                     let output_dir = format!("{}/{}", cli.output_dir, project_name);
-                    if let Err(err) = file_gen::generate_project_with_dir(&output_dir, parsed_files, file_path) {
+                    if let Err(err) =
+                        file_gen::generate_project_with_dir(&output_dir, parsed_files, file_path)
+                    {
                         eprintln!("Error generating project {}: {}", project_name, err);
                     } else {
                         println!("Project {} generated in {}", project_name, output_dir);
                         if cli.execute {
                             let project_path = Path::new(&output_dir);
-                            if let Err(err) = execute_project_if_needed(project_path, project_path) {
+                            if let Err(err) = execute_project_if_needed(project_path, project_path)
+                            {
                                 eprintln!("Execution failed for {}: {}", project_name, err);
                             }
                         }

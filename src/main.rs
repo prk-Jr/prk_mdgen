@@ -43,7 +43,7 @@ struct Cli {
     skip: Vec<String>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 enum CommandChoice {
     Sample,
     Prompt,
@@ -51,7 +51,7 @@ enum CommandChoice {
     None,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 enum MdPatternCli {
     CodeTag,
     Hash,
@@ -101,6 +101,7 @@ fn main() {
                 ignore_file: if ignore_file.exists() { Some(ignore_file) } else { None },
                 extra_ignores: cli.skip.clone(),
                 project_type: cli.project_type.clone(),
+                pattern: cli.pattern.clone(),
             };
             match extract_to_markdown(config) {
                 Ok(md) => {

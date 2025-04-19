@@ -10,7 +10,11 @@ const GITIGNORE_CONTENT: &str = r#"
 
 /// Generates the project in the given output directory using the provided parsed files,
 /// and copies the source Markdown file into the generated project folder.
-pub fn generate_project_with_dir(output_dir: &str, files: Vec<crate::parser::ParsedFile>, source_md: &Path) -> io::Result<()> {
+pub fn generate_project_with_dir(
+    output_dir: &str,
+    files: Vec<crate::parser::ParsedFile>,
+    source_md: &Path,
+) -> io::Result<()> {
     let out_path = Path::new(output_dir);
     fs::create_dir_all(out_path)?;
 

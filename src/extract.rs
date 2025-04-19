@@ -1,20 +1,14 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
-
-use anyhow::Result;
+use std::{fs, path::{Path, PathBuf}};
+use anyhow::{Result, Context};
 use ignore::WalkBuilder;
+use crate::MdPatternCli;
 
 pub struct ExtractConfig {
-    /// Root directory to scan
     pub root: PathBuf,
-    /// Optional path to a `.gitignore` or other ignore file
     pub ignore_file: Option<PathBuf>,
-    /// Comma‑separated skip patterns (folder or file names)
     pub extra_ignores: Vec<String>,
-    /// Optional hint (`"rust"`, `"flutter"`, `"node"`, etc.)
     pub project_type: Option<String>,
+    pub pattern: Option<MdPatternCli>,
 }
 
 /// Walks the directory, applies ignores & skips, builds a tree and dumps every file into Markdown.
@@ -35,26 +29,26 @@ pub fn extract_to_markdown(config: ExtractConfig) -> Result<String> {
             continue;
         }
         let path = entry.into_path();
-
-        // Skip by project_type (optional)
         if !should_include(&path, &config) {
             continue;
         }
-
         files.push(path);
+    }
+
+    // Early exit if no files
+    if files.is_empty() {
+        return Ok("# Project structure\n\n*No files found*\n".to_string());
     }
 
     // 3) Sort and apply --skip filters
     files.sort();
     files.retain(|path| {
-        // Compute path relative to root
-        let rel = path.strip_prefix(&config.root).unwrap_or(path);
+        let rel = path.strip_prefix(&config.root)
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|_| path.clone());
         let rel_str = rel.to_string_lossy();
-
-        // If any skip pattern matches any path component or a prefix, drop it
         !config.extra_ignores.iter().any(|pat| {
-            rel_str.starts_with(pat)
-                || rel.components().any(|c| *c.as_os_str() == **pat)
+            rel_str.starts_with(pat) || rel.components().any(|c| *c.as_os_str() == **pat)
         })
     });
 
@@ -69,7 +63,12 @@ pub fn extract_to_markdown(config: ExtractConfig) -> Result<String> {
     md.push_str("```\n\n");
 
     for path in files {
-        let rel = path.strip_prefix(&config.root).unwrap();
+        // compute relative path, normalize separators
+        let rel = path.strip_prefix(&config.root)
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|_| path.clone());
+        let rel_raw = rel.to_string_lossy().to_string();
+        let rel_str = rel_raw.replace('\\', "/");
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         let lang = match ext {
             "rs" => "rust",
@@ -80,14 +79,41 @@ pub fn extract_to_markdown(config: ExtractConfig) -> Result<String> {
             "ts" => "typescript",
             _ => "",
         };
-        md.push_str(&format!("### <file> {} </file>\n", rel.display()));
-        md.push_str(&format!("```{}\n", lang));
-        let content = fs::read_to_string(&path)?;
-        md.push_str(&content);
-        md.push_str("```\n\n");
+        let content = fs::read_to_string(&path)
+            .with_context(|| format!("failed to read file: {:?}", path))?;
+
+        // build the block
+        let block = match config.pattern {
+            Some(MdPatternCli::CodeTag) => format!(
+                "<code path=\"{0}\">\n{1}\n</code>\n\n", 
+                rel_str, content.trim()
+            ),
+            Some(MdPatternCli::Hash) => format!(
+                "### {0}\n{1}", rel_str, fenced(&rel_str, lang, &content)
+            ),
+            Some(MdPatternCli::Delimiter) => format!(
+                "========\n{0}\n========\n{1}", rel_str, fenced(&rel_str, lang, &content)
+            ),
+            Some(MdPatternCli::Raw) => format!(
+                "// file: {0}\n{1}", rel_str, fenced(&rel_str, lang, &content)
+            ),
+            Some(MdPatternCli::FileCode) => format!(
+                "<file> {0} </file>\n<code>\n{1}\n</code>\n\n", 
+                rel_str, content.trim()
+            ),
+            Some(MdPatternCli::FileFence) | None => format!(
+                "### <file> {0} </file>\n{1}", rel_str, fenced(&rel_str, lang, &content)
+            ),
+        };
+        md.push_str(&block);
     }
 
     Ok(md)
+}
+
+/// Helper to produce a fenced code block with language and content
+fn fenced(rel: &str, lang: &str, content: &str) -> String {
+    format!("```{}\n{}\n```\n\n", lang, content.trim())
 }
 
 /// Decide inclusion by project_type hint (optional) or by extension.
@@ -95,30 +121,19 @@ fn should_include(path: &Path, config: &ExtractConfig) -> bool {
     let rel = path.strip_prefix(&config.root).unwrap_or(path);
     let s = rel.to_string_lossy();
 
-    // Always include core manifests
     if s == "Cargo.toml" || s == "pubspec.yaml" || s == "package.json" {
         return true;
     }
 
     if let Some(pt) = &config.project_type {
         match pt.as_str() {
-            "flutter" => {
-                // Only keep pubspec.yaml plus lib/
-                return s == "pubspec.yaml" || s.starts_with("lib/");
-            }
-            "rust" => {
-                // Keep Cargo.toml plus src/
-                return s == "Cargo.toml" || s.starts_with("src/");
-            }
-            "node" => {
-                // Keep package.json plus src/
-                return s == "package.json" || s.starts_with("src/");
-            }
+            "flutter" => return s == "pubspec.yaml" || s.starts_with("lib/"),
+            "rust" => return s == "Cargo.toml" || s.starts_with("src/"),
+            "node" => return s == "package.json" || s.starts_with("src/"),
             _ => {}
         }
     }
 
-    // Fallback: include by common source extensions
     matches!(
         path.extension().and_then(|e| e.to_str()),
         Some("rs" | "toml" | "json" | "js" | "ts" | "dart")
@@ -131,18 +146,11 @@ fn build_tree(files: &[PathBuf], root: &Path) -> String {
     let mut last_parts: Vec<String> = Vec::new();
 
     for path in files {
-        let rel = path.strip_prefix(root).unwrap();
+        let rel = path.strip_prefix(root).unwrap_or(path);
         let parts: Vec<String> = rel.iter().map(|p| p.to_string_lossy().into()).collect();
-        let common = last_parts
-            .iter()
-            .zip(&parts)
-            .take_while(|(a, b)| a == b)
-            .count();
+        let common = last_parts.iter().zip(&parts).take_while(|(a, b)| a == b).count();
 
-        // Pop off any branches we backtracked from
         last_parts.truncate(common);
-
-        // Print new branches
         for part in &parts[common..] {
             for _ in 0..last_parts.len() {
                 tree.push_str("    ");

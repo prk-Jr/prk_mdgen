@@ -23,21 +23,27 @@ pub enum MdPatternType {
 /// automatically selects the pattern with the most extracted file blocks.
 pub fn parse_content(content: &str, forced: Option<MdPatternType>) -> Vec<ParsedFile> {
     let content = content.trim();
+    let content = if let Some(idx) = content.find("### <file>") {
+        &content[idx..]
+    } else {
+        content
+    }
+    .trim();
 
     let group1 = parse_code_tag(content);
     let group2 = parse_hash_marker(content);
     let group3 = parse_delimiter_marker(content);
     let group4 = parse_raw_code_block(content);
     let group5 = parse_file_code(content);
-    let group6 = parse_file_fence(content);  // ← new
+    let group6 = parse_file_fence(content);
 
     if let Some(f) = forced {
         return match f {
-            MdPatternType::CodeTag   => group1,
-            MdPatternType::HashMarker=> group2,
+            MdPatternType::CodeTag => group1,
+            MdPatternType::HashMarker => group2,
             MdPatternType::Delimiter => group3,
-            MdPatternType::Raw       => group4,
-            MdPatternType::FileCode  => group5,
+            MdPatternType::Raw => group4,
+            MdPatternType::FileCode => group5,
             MdPatternType::FileFence => group6,
         };
     }
@@ -48,14 +54,15 @@ pub fn parse_content(content: &str, forced: Option<MdPatternType>) -> Vec<Parsed
     all.extend(group3);
     all.extend(group4);
     all.extend(group5);
-    all.extend(group6);                        // ← merge it here
+    all.extend(group6);
 
     // dedupe by path
-    all.sort_by(|a,b| a.path.cmp(&b.path));
-    all.dedup_by(|a,b| a.path == b.path);
+    all.sort_by(|a, b| a.path.cmp(&b.path));
+    all.dedup_by(|a, b| a.path == b.path);
     all
 }
 
+// ... rest of sub-parsers and tests (unchanged)
 
 /// Sub-parser 1: XML-like code block pattern.
 /// Example:
@@ -271,46 +278,60 @@ fn parse_file_fence(content: &str) -> Vec<ParsedFile> {
     let mut idx = 0;
 
     lazy_static! {
-        // ### <file> path </file>
         static ref FILE_HEADING_REGEX: Regex = Regex::new(
             r"(?i)^\s*#{1,6}\s*<file>\s*([^\s<>]+?\.(?:rs|toml|json))\s*</file>\s*$"
         ).unwrap();
-        static ref CODE_FENCE_REGEX: Regex = Regex::new(r"^\s*```(?:[^\n]*)\s*$").unwrap();
+        static ref OPEN_FENCE_REGEX: Regex = Regex::new(r"^\s*```").unwrap();
     }
 
     while idx < lines.len() {
         if let Some(cap) = FILE_HEADING_REGEX.captures(lines[idx]) {
             let file_path = cap[1].trim().to_string();
             idx += 1;
+
             // skip blank lines
             while idx < lines.len() && lines[idx].trim().is_empty() {
                 idx += 1;
             }
-            // expect opening fence
-            if idx < lines.len() && CODE_FENCE_REGEX.is_match(lines[idx]) {
-                idx += 1; // skip the ``` line
+
+            // must start with opening fence
+            if idx < lines.len() && OPEN_FENCE_REGEX.is_match(lines[idx]) {
+                idx += 1; // skip the opening fence
                 let mut code_lines = Vec::new();
-                // collect until closing fence or EOF
-                while idx < lines.len() && !CODE_FENCE_REGEX.is_match(lines[idx]) {
-                    code_lines.push(lines[idx]);
-                    idx += 1;
+
+                // collect until a fence marker appears
+                while idx < lines.len() {
+                    let line = lines[idx];
+                    if line.contains("```") {
+                        // if it’s on its own line, we’re done
+                        if line.trim() == "```" || OPEN_FENCE_REGEX.is_match(line) {
+                            idx += 1;
+                        } else {
+                            // it’s stuck to code: strip from first backtick onward
+                            if let Some(pos) = line.find("```") {
+                                code_lines.push(&line[..pos]);
+                            }
+                        }
+                        break;
+                    } else {
+                        code_lines.push(line);
+                        idx += 1;
+                    }
                 }
-                // skip closing fence if present
-                if idx < lines.len() && CODE_FENCE_REGEX.is_match(lines[idx]) {
-                    idx += 1;
-                }
+
+                // join, trim, and push
                 let code = code_lines.join("\n").trim().to_string();
-                results.push(ParsedFile {
-                    path: file_path,
-                    content: code,
-                });
+                results.push(ParsedFile { path: file_path, content: code });
                 continue;
             }
         }
         idx += 1;
     }
+
     results
 }
+
+
 
 /// Helper: extracts code lines from `lines` starting at idx until a closing code fence is found (or EOF).
 fn extract_code_block(lines: &[&str], mut idx: usize) -> (String, usize) {

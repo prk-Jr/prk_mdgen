@@ -13,6 +13,7 @@ pub fn execute_project_if_needed(project_dir: &Path, output_dir: &Path) -> std::
     // Ensure the output directory exists
     fs::create_dir_all(output_dir)?;
 
+    // Run `cargo run` if main.rs is present
     if main_rs.exists() {
         let output_file = output_dir.join("run_output.txt");
         println!("Executing `cargo run` for {:?}", project_dir);
@@ -31,6 +32,8 @@ pub fn execute_project_if_needed(project_dir: &Path, output_dir: &Path) -> std::
         fs::write(&output_file, combined_output)?;
     }
 
+    // Run `cargo test` only if lib.rs is present
+    if lib_rs.exists() {
         let output_file = output_dir.join("test_output.txt");
         println!("Executing `cargo test` for {:?}", project_dir);
 
@@ -46,6 +49,7 @@ pub fn execute_project_if_needed(project_dir: &Path, output_dir: &Path) -> std::
         );
 
         fs::write(&output_file, combined_output)?;
+    }
 
     Ok(())
 }

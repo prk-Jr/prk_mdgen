@@ -110,7 +110,7 @@ fn main() {
             };
             match extract_to_markdown(config) {
                 Ok(md) => {
-                    let out_md = Path::new(&cli.output_dir);
+                    let out_md = Path::new(&cli.output_dir).join("codebase.md");
                     fs::create_dir_all(&cli.output_dir).unwrap();
                     fs::write(&out_md, md).expect("Failed to write codebase.md");
                     println!("Extracted markdown to {:?}", out_md);

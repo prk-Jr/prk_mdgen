@@ -62,8 +62,6 @@ pub fn parse_content(content: &str, forced: Option<MdPatternType>) -> Vec<Parsed
     all
 }
 
-// ... rest of sub-parsers and tests (unchanged)
-
 /// Sub-parser 1: XML-like code block pattern.
 /// Example:
 ///     <code path="Cargo.toml">
@@ -110,35 +108,54 @@ fn parse_code_tag(content: &str) -> Vec<ParsedFile> {
 ///     ```rust
 ///     fn main() { ... }
 ///     ```
+/// Updated to support:
+///     ### `Cargo.toml`
+///     ```toml
+///     [package]
+///     name = "example"
+///     ```
 fn parse_hash_marker(content: &str) -> Vec<ParsedFile> {
     let mut results = Vec::new();
     let lines: Vec<&str> = content.lines().collect();
     let mut idx = 0;
+
     lazy_static! {
         static ref HASH_HEADER_REGEX: Regex =
-            Regex::new(r"^\s*#{1,6}\s+([^\s]+\.(?:rs|toml|json))\s*$").unwrap();
+            Regex::new(r"^\s*#{1,6}\s+`?([^`\n]+)`?\s*$").unwrap();
         static ref CODE_FENCE_REGEX: Regex = Regex::new(r"^\s*```(?:[a-zA-Z0-9]*)\s*$").unwrap();
     }
+
     while idx < lines.len() {
         let line = lines[idx];
         if let Some(cap) = HASH_HEADER_REGEX.captures(line) {
-            let file_path = cap[1].trim().to_string();
+            let file_path = cap[1].to_string();
             idx += 1;
+
             while idx < lines.len() && lines[idx].trim().is_empty() {
                 idx += 1;
             }
+
             if idx < lines.len() && CODE_FENCE_REGEX.is_match(lines[idx]) {
-                idx += 1; // skip opening fence
-                let (code, new_idx) = extract_code_block(&lines, idx);
-                idx = new_idx;
+                idx += 1; // Skip the opening fence
+                let mut code = String::new();
+                while idx < lines.len() && !CODE_FENCE_REGEX.is_match(lines[idx]) {
+                    code.push_str(lines[idx]);
+                    code.push('\n');
+                    idx += 1;
+                }
+                if idx < lines.len() && CODE_FENCE_REGEX.is_match(lines[idx]) {
+                    idx += 1; // Skip the closing fence
+                }
                 results.push(ParsedFile {
                     path: file_path,
                     content: code.trim().to_string(),
                 });
-                continue;
+            } else {
+                idx += 1;
             }
+        } else {
+            idx += 1;
         }
-        idx += 1;
     }
     results
 }
@@ -278,9 +295,9 @@ fn parse_file_fence(content: &str) -> Vec<ParsedFile> {
     let mut idx = 0;
 
     lazy_static! {
-        static ref FILE_HEADING_REGEX: Regex = Regex::new(
-            r"(?i)^\s*#{1,6}\s*<file>\s*([^\s<>]+?\.(?:rs|toml|json))\s*</file>\s*$"
-        ).unwrap();
+        static ref FILE_HEADING_REGEX: Regex =
+            Regex::new(r"(?i)^\s*#{1,6}\s*<file>\s*([^\s<>]+?\.(?:rs|toml|json))\s*</file>\s*$")
+                .unwrap();
         static ref OPEN_FENCE_REGEX: Regex = Regex::new(r"^\s*```").unwrap();
     }
 
@@ -321,7 +338,10 @@ fn parse_file_fence(content: &str) -> Vec<ParsedFile> {
 
                 // join, trim, and push
                 let code = code_lines.join("\n").trim().to_string();
-                results.push(ParsedFile { path: file_path, content: code });
+                results.push(ParsedFile {
+                    path: file_path,
+                    content: code,
+                });
                 continue;
             }
         }
@@ -330,8 +350,6 @@ fn parse_file_fence(content: &str) -> Vec<ParsedFile> {
 
     results
 }
-
-
 
 /// Helper: extracts code lines from `lines` starting at idx until a closing code fence is found (or EOF).
 fn extract_code_block(lines: &[&str], mut idx: usize) -> (String, usize) {
@@ -491,5 +509,33 @@ mod tests {
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].path, "src/lib.rs");
         assert!(parsed[0].content.contains("println!(\"hello\")"));
+    }
+    use super::*;
+
+    #[test]
+    fn test_parse_hash_marker() {
+        let input = r###"
+### `Cargo.toml`
+```toml
+[package]
+name = "test"
+```
+### `src/main.rs`
+```rust
+fn main() {}
+```
+### `config.yaml`
+```yaml
+key: value
+```
+        "###;
+        let result = parse_hash_marker(input);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].path, "Cargo.toml");
+        assert_eq!(result[0].content, "[package]\nname = \"test\"");
+        assert_eq!(result[1].path, "src/main.rs");
+        assert_eq!(result[1].content, "fn main() {}");
+        assert_eq!(result[2].path, "config.yaml");
+        assert_eq!(result[2].content, "key: value");
     }
 }

@@ -66,7 +66,7 @@ If src/main.rs exists, the project will be built and run using cargo run.
 
 If src/lib.rs exists, it will be tested using cargo test.
 
-The output of these commands will be captured and stored in files such as run_output.txt and test_output.txt.
+The output of these commands will be captured and stored in files such as run_output.log and test_output.log.
 
 Example:
 <code path="Cargo.toml"> [package] name = "sample_project" version = "0.1.0" edition = "2021" </code>

@@ -19,7 +19,7 @@ pub fn execute_project_if_needed(project_dir: &Path, output_dir: &Path) -> std::
 
     // Run `cargo run` if main.rs is present
     if main_rs.exists() || if_bin  {
-        let output_file = output_dir.join("run_output.txt");
+        let output_file = output_dir.join("run_output.log");
         println!("Executing `cargo run` for {:?}", project_dir);
 
         let output = Command::new("cargo")
@@ -37,7 +37,7 @@ pub fn execute_project_if_needed(project_dir: &Path, output_dir: &Path) -> std::
     }
 
     // Run `cargo test` 
-        let output_file = output_dir.join("test_output.txt");
+        let output_file = output_dir.join("test_output.log");
         println!("Executing `cargo test` for {:?}", project_dir);
 
         let output = Command::new("cargo")

@@ -17,7 +17,7 @@ This CLI tool supports two main workflows:
 - **Generates full Rust projects** (files, folders, `Cargo.toml`, etc.)
 - **Builds and runs** `main.rs` projects using `cargo run`
 - **Tests** `lib.rs` projects using `cargo test`
-- Saves execution output to `run_output.txt` or `test_output.txt`
+- Saves execution output to `run_output.log` or `test_output.log`
 
 ### 📤 2. **Project Extraction**
 
@@ -162,7 +162,7 @@ output/
     ├── Cargo.toml
     ├── src/
     │   └── main.rs
-    └── run_output.txt   # if main.rs exists
+    └── run_output.log   # if main.rs exists
 ```
 
 When extracting a project to Markdown:
@@ -176,8 +176,8 @@ output/
 
 ## 🧪 Execution Behavior
 
-- If `src/main.rs` is present: runs `cargo run`, output is saved to `run_output.txt`
-- If `src/lib.rs` is present: runs `cargo test`, output is saved to `test_output.txt`
+- If `src/main.rs` is present: runs `cargo run`, output is saved to `run_output.log`
+- If `src/lib.rs` is present: runs `cargo test`, output is saved to `test_output.log`
 
 ---
 
